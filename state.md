@@ -52,8 +52,31 @@ The application is mature, synchronized with GitHub, and optimized for both tech
 - **Download Management**: Updated folder creation to dynamically append the creator's visible ID (`ChannelName_138277198`), preventing folder collisions. The extraction logic strictly prioritizes `unique_id` then `short_id`, while explicitly filtering out internal database values (`uid`) or encrypted strings (`sec_uid`) to keep folder names clean.
 - **Performance Optimization**: Completely removed the Google Translate API dependency from the title extraction phase, drastically speeding up analysis time and reducing network error points.
 
+### Phase 7: Channel Management & Incremental Updates (Current)
+- **Channel Sidebar**: Integrated a "Kênh đã lưu" (Saved Channels) sidebar to manage frequently analyzed creators.
+- **Incremental Scanning**: 
+  - Implemented a "5-match" stopping heuristic to efficiently skip pre-analyzed and pinned videos.
+  - Significantly reduced API calls and analysis time for daily channel updates.
+- **Persistent Data Migration**: 
+  - Moved `config.json`, `channels.json`, and `user_data` (browser profile) from the project folder to `%LOCALAPPDATA%\DouyinDownloader`.
+  - ensures that settings, saved channels, and login sessions are **not lost** when the tool is updated, deleted, or moved.
+  - Implemented an automatic migration logic to seamlessly transfer legacy data on first run.
+- **UI Performance**: Refined the right sidebar with a black high-contrast background and restored footer controls for a more stable user experience.
+
+### Phase 8: Visual Cues & Robustness Fixes (Latest)
+- **Visual Highlighting**: Implemented a subtle dark green background (`BG_HIGHLIGHT`) for "New" videos in the table. This allows users to immediately distinguish newly found videos during incremental updates.
+- **Sidebar Deduplication (Greedy Merging)**:
+  - Overhauled the save logic to prevent duplicate channel entries.
+  - Implemented "Greedy Merging": when an update is triggered, the tool automatically detects and collapses duplicate records based on normalized URLs or Channel IDs.
+  - Added deduplication on application startup to ensure a clean sidebar state from the first second.
+- **Incremental Update Refinement**:
+  - Re-engineered the communication between Python and the browser scripts using an explicit `__IS_INCREMENTAL__` flag.
+  - Fixed a critical regression where "Update Video" would perform a full scan on uninitialized channels; it now correctly returns 0 videos, respecting the "delta-only" intent.
+- **Improved Logging**: Added clear, actionable logs in the footer for matching events, target IDs, and merging actions.
+
 ## 📋 Handover & Operations
 - **To Run**: `python main.py`
 - **To Build .exe**: `python build.py`
 - **GitHub Policy**: Manual updates only (command: "cập nhật tool lên github").
 - **Key Dependencies**: `customtkinter`, `playwright`, `httpx`, `beautifulsoup4`.
+- **System Path**: Persistent data is stored at `%LOCALAPPDATA%\DouyinDownloader`.

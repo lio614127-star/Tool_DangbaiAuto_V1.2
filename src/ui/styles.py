@@ -18,6 +18,10 @@ TEXT = "#FFFFFF"            # Pure white
 TEXT_SECONDARY = "#CBD5E1"  # Brighter slate/grey
 TEXT_MUTED = "#94A3B8"      # Brighter muted grey
 
+# Highlighting
+BG_HIGHLIGHT = "#1A2F25"    # Subtle dark green for new videos
+
+
 # Platform Colors
 PLATFORM_DOUYIN = "#FE2C55"
 PLATFORM_TIKTOK = "#00F2EA"

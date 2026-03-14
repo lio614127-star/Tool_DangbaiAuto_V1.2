@@ -89,6 +89,18 @@
         let falseEndRetries = 0;
         const MAX_FALSE_END_RETRIES = 3;
         let seenIds = new Set();
+        
+        const knownVideoIds = window.__KNOWN_VIDEO_IDS__ || [];
+        let consecutiveKnown = 0;
+        let isIncrementalUpdate = !!window.__IS_INCREMENTAL__;
+        
+        // Nếu là update video tăng cường nhưng chưa có lịch sử, coi như xong luôn (trả về 0 video mới)
+        if (isIncrementalUpdate && knownVideoIds.length === 0) {
+            console.log("[Douyin API] Chế độ Update Video Mới nhưng danh sách cũ rỗng. Dừng ngay.");
+            return { videos: [], nickname: nickname, channel_id: channelId };
+        }
+
+        console.log(`[Scrape] Mode: ${isIncrementalUpdate ? 'Incremental' : 'Full Scan'}. Known videos: ${knownVideoIds.length}`);
 
         while (true) {
             const page = await getIdPage(sec_user_id, max_cursor, 0, max_cursor === 0);
@@ -120,9 +132,10 @@
                     let sId = author.short_id || "";
                     if (sId === "0") sId = "";
                     
-                    // Ưu tiên ID hiển thị thật (unique_id trước, nếu không có thì lấy short_id)
-                    // Không lấy uid (số dài) hay sec_uid (mã hóa MS4w) bừa bãi nữa
-                    channelId = uId || sId;
+                    // Fallback cuối cùng là sec_uid (mã MS4w) nếu cả hai ID kia đều rỗng
+                    let secId = author.sec_uid || "";
+                    
+                    channelId = uId || sId || secId;
                 }
             }
 
@@ -134,6 +147,17 @@
                 // Tránh lỗi video trùng lặp khi kẹt cursor
                 if (seenIds.has(item.aweme_id)) continue;
                 seenIds.add(item.aweme_id);
+                
+                if (isIncrementalUpdate) {
+                    if (knownVideoIds.includes(item.aweme_id)) {
+                        consecutiveKnown++;
+                        console.log(`[Douyin API] Gặp video đã biết (${consecutiveKnown}/5): ${item.aweme_id}`);
+                        continue; // Bỏ qua video cũ, KHÔNG cho vào videoInfoExport
+                    } else {
+                        consecutiveKnown = 0; // Reset nếu gặp video mới
+                    }
+                }
+                
                 newVideosCount++;
 
                 const stats = item.statistics || {};
@@ -171,6 +195,11 @@
                     duration: Math.floor((item.video?.duration || 0) / 1000)
                 });
                 globalIndex++;
+            }
+            
+            if (isIncrementalUpdate && consecutiveKnown >= 5) {
+                console.log(`[Douyin API] Đã gặp 5 video cũ liên tiếp. Dừng Update Viedeo Mới tại đây.`);
+                break;
             }
 
             console.log(`[Douyin API] Lọc được ${newVideosCount} video mới. Tổng: ${videoInfoExport.length}.`);

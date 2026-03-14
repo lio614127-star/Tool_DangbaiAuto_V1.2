@@ -38,3 +38,19 @@
 - [x] Full end-to-end testing (Login -> Analyze -> Filter -> Batch Download).
 - [x] Final UI aesthetics check (Icon added).
 - [x] Handover documentation (`HUONG_DAN_NHANH.txt`).
+
+## Phase 6: Scraper Stabilization & Core Fixes (Finalized)
+- [x] Switch Playwright to `headless=False` to bypass aggressive Douyin bot detection.
+- [x] Implement cursor override logic to handle premature `has_more=0` reports.
+- [x] Increase script timeouts and handle page navigation interruptions.
+- [x] Optimize analysis speed by removing real-time translation dependency.
+- [x] Standardize download folder names using extracted Channel IDs.
+
+## Phase 7: Channel Management, Incremental Updates & Visual Cues (Finalized)
+- [x] Implement "Saved Channels" sidebar UI with clickable interaction.
+- [x] Build incremental scanning logic (Stop-at-ID).
+- [x] Migrate all persistent data (config, channels, browser profile) to `%LOCALAPPDATA%`.
+- [x] Add data migration logic for legacy project-folder files.
+- [x] **Visual Highlighting**: Implement subtle green background for new videos.
+- [x] **Greedy Merging**: Automatically collapse duplicate sidebar entries.
+- [x] **Logic Refinement**: Fix incremental update behavior for new channels and explicit flags.

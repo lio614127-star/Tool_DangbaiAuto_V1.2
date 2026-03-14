@@ -17,6 +17,11 @@ DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.
 PAGE_LOAD_TIMEOUT = 60000  # 60 seconds
 
 # Storage
+# Persistent data is stored in %LOCALAPPDATA% to survive tool updates/moves
+APP_DATA_DIR = Path(os.getenv("LOCALAPPDATA", os.path.expanduser("~"))) / "DouyinDownloader"
+APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 DEFAULT_DOWNLOAD_PATH = os.path.join(os.path.expanduser("~"), "Downloads", "DouyinDownloader")
-USER_DATA_DIR = ROOT_DIR / "user_data"
-CONFIG_FILE = ROOT_DIR / "config.json"
+USER_DATA_DIR = APP_DATA_DIR / "user_data"
+CONFIG_FILE = APP_DATA_DIR / "config.json"
+CHANNELS_FILE = APP_DATA_DIR / "channels.json"

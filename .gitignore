@@ -29,6 +29,8 @@ ENV/
 
 # App Specific
 config.json
+channels.json
+gsd-2-main/
 user_data/
 *.log
 *.exe

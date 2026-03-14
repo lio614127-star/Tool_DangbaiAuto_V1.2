@@ -5,9 +5,9 @@ import json
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, ttk
 from src.ui import styles as T
-from src.core.models import Platform, URLType, ChannelInfo, VideoInfo
+from src.core.models import Platform, URLType, ChannelInfo, VideoInfo, SavedChannel
 from src.core.scrapers.douyin_scraper import DouyinScraper
-from src.utils.constants import DEFAULT_DOWNLOAD_PATH, CONFIG_FILE
+from src.utils.constants import DEFAULT_DOWNLOAD_PATH, CONFIG_FILE, CHANNELS_FILE, ROOT_DIR, USER_DATA_DIR
 
 class MainWindow(ctk.CTk):
     def __init__(self):
@@ -24,8 +24,12 @@ class MainWindow(ctk.CTk):
         self.failed_downloads: list = [] # Track failed (vid, filename)
         self._async_loop = None
         
-        # Load Settings
+        # Migrate data from old paths if needed
+        self._migrate_data()
+        
+        # Load Settings & Data
         self.settings = self._load_settings()
+        self.saved_channels: dict[str, SavedChannel] = self._load_channels()
         
         self._start_async_loop()
         self._setup_ui()
@@ -44,6 +48,67 @@ class MainWindow(ctk.CTk):
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.settings, f, indent=4)
         except: pass
+
+    def _normalize_url(self, u):
+        if not u: return ""
+        u = u.replace("http://", "https://")
+        if "https://douyin.com" in u and "https://www.douyin.com" not in u:
+            u = u.replace("https://douyin.com", "https://www.douyin.com")
+        return u.split('?')[0].rstrip('/')
+
+    def _load_channels(self) -> dict[str, SavedChannel]:
+        channels: dict[str, SavedChannel] = {}
+        if os.path.exists(CHANNELS_FILE):
+            try:
+                with open(CHANNELS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    for k, v in data.items():
+                        ch = SavedChannel(**v)
+                        # Deduplicate on load to prevent UI clutter
+                        norm_url = self._normalize_url(ch.url)
+                        found_id = None
+                        for sid, s_ch in channels.items():
+                            if (ch.id and s_ch.id == ch.id) or (self._normalize_url(s_ch.url) == norm_url):
+                                found_id = sid
+                                break
+                        
+                        if found_id:
+                            # Keep the one with the more recent update
+                            if ch.last_update > channels[found_id].last_update:
+                                channels[found_id] = ch
+                        else:
+                            channels[k] = ch
+            except: pass
+        return channels
+        
+    def _save_channels(self):
+        try:
+            with open(CHANNELS_FILE, "w", encoding="utf-8") as f:
+                data = {k: v.__dict__ for k, v in self.saved_channels.items()}
+                json.dump(data, f, indent=4)
+        except: pass
+
+    def _migrate_data(self):
+        """Move data from old project-relative paths to new system-wide paths if needed."""
+        import shutil
+        old_config = ROOT_DIR / "config.json"
+        old_channels = ROOT_DIR / "channels.json"
+        old_user_data = ROOT_DIR / "user_data"
+
+        # Migrate Config
+        if old_config.exists() and not CONFIG_FILE.exists():
+            try: shutil.copy2(old_config, CONFIG_FILE)
+            except: pass
+
+        # Migrate Channels
+        if old_channels.exists() and not CHANNELS_FILE.exists():
+            try: shutil.copy2(old_channels, CHANNELS_FILE)
+            except: pass
+
+        # Migrate User Data (Browser profile)
+        if old_user_data.exists() and not USER_DATA_DIR.exists():
+            try: shutil.copytree(old_user_data, USER_DATA_DIR)
+            except: pass
 
     def _start_async_loop(self):
         """Start an asyncio event loop in a background thread."""
@@ -123,6 +188,7 @@ class MainWindow(ctk.CTk):
         self.body = ctk.CTkFrame(self, fg_color="transparent")
         self.body.grid(row=2, column=0, sticky="nsew", padx=T.PAD_LG, pady=T.PAD_MD)
         self.body.grid_columnconfigure(1, weight=1) # Table expands
+        self.body.grid_columnconfigure(2, weight=0, minsize=250) # Right Sidebar
         self.body.grid_rowconfigure(0, weight=1)
 
         # Sidebar (Left)
@@ -135,6 +201,10 @@ class MainWindow(ctk.CTk):
         ctk.CTkLabel(self.sidebar, text="Sắp xếp theo:", font=(T.FONT_FAMILY, 12, "bold"), text_color=T.TEXT).pack(anchor="w", padx=T.PAD_MD)
         self.sort_option = ctk.CTkOptionMenu(self.sidebar, values=["Likes (cao -> thấp)", "Mới nhất", "Cũ nhất", "Thời lượng (dài -> ngắn)"], fg_color=T.BG_TERTIARY, text_color=T.TEXT)
         self.sort_option.pack(fill="x", padx=T.PAD_MD, pady=(0, T.PAD_MD))
+
+        ctk.CTkLabel(self.sidebar, text="👁️ Lượt xem tối thiểu:", font=(T.FONT_FAMILY, 12, "bold"), text_color=T.TEXT).pack(anchor="w", padx=T.PAD_MD)
+        self.min_views_entry = ctk.CTkEntry(self.sidebar, placeholder_text="Ví dụ: 100000", fg_color=T.BG_TERTIARY, text_color=T.TEXT)
+        self.min_views_entry.pack(fill="x", padx=T.PAD_MD, pady=(0, T.PAD_SM))
 
         ctk.CTkLabel(self.sidebar, text="❤️ Lượt like tối thiểu:", font=(T.FONT_FAMILY, 12, "bold"), text_color=T.TEXT).pack(anchor="w", padx=T.PAD_MD)
         self.min_likes_entry = ctk.CTkEntry(self.sidebar, placeholder_text="Ví dụ: 5000", fg_color=T.BG_TERTIARY, text_color=T.TEXT)
@@ -173,11 +243,30 @@ class MainWindow(ctk.CTk):
         ctk.CTkButton(sel_grid, text="Top 50", width=65, height=35, command=lambda: self._select_top(50)).pack(side="left", padx=2, expand=True)
         ctk.CTkButton(sel_grid, text="Trend", width=65, height=35, command=lambda: self._select_top(10)).pack(side="left", padx=2, expand=True)
 
-        # Video Table (Right)
+        # Video Table (Middle)
         self.table_frame = ctk.CTkFrame(self.body, fg_color=T.BG_SECONDARY, corner_radius=T.RADIUS_LG)
-        self.table_frame.grid(row=0, column=1, sticky="nsew")
+        self.table_frame.grid(row=0, column=1, sticky="nsew", padx=(0, T.PAD_MD))
 
         self._setup_table()
+
+        # Channel List Sidebar (Right) - Black background like log box
+        self.right_sidebar = ctk.CTkFrame(self.body, fg_color=T.BG_PRIMARY, width=280, corner_radius=T.RADIUS_LG)
+        self.right_sidebar.grid(row=0, column=2, sticky="nsew")
+        self.right_sidebar.grid_propagate(False)
+        self.right_sidebar.grid_rowconfigure(1, weight=1)
+        
+        rs_header = ctk.CTkFrame(self.right_sidebar, fg_color="transparent")
+        rs_header.grid(row=0, column=0, sticky="ew", padx=T.PAD_MD, pady=T.PAD_MD)
+        rs_header.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(rs_header, text="📑 Kênh đã lưu", font=(T.FONT_FAMILY, T.FONT_SIZE_HEADING, "bold"), text_color=T.TEXT).grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(rs_header, text="🗑 Xóa Kênh", width=80, height=28, fg_color="#EF4444", hover_color="#DC2626", font=(T.FONT_FAMILY, 11, "bold"), command=self._delete_selected_channels).grid(row=0, column=1, sticky="e")
+        
+        self.channel_list_frame = ctk.CTkScrollableFrame(self.right_sidebar, fg_color="transparent")
+        self.channel_list_frame.grid(row=1, column=0, sticky="nsew", padx=T.PAD_SM, pady=(0, T.PAD_MD))
+        
+        self.channel_widgets = {} # channel_id -> {"checkbox_var": var, "frame": frame}
+        self._refresh_channel_list()
 
         # 4. Footer - Row 3
         self.footer = ctk.CTkFrame(self, fg_color=T.BG_SECONDARY, height=150)
@@ -216,11 +305,89 @@ class MainWindow(ctk.CTk):
         ctk.CTkButton(actions_row, text="↓ Tải đã chọn", width=110, height=40, font=(T.FONT_FAMILY, 12, "bold"), fg_color=T.ACCENT_SECONDARY, command=self._on_download_selected).pack(side="left", padx=2)
         ctk.CTkButton(actions_row, text="↻ Tải lại lỗi", width=110, height=40, font=(T.FONT_FAMILY, 12, "bold"), fg_color="#EF4444", command=self._retry_failed_downloads).pack(side="left", padx=2)
 
+    def _refresh_channel_list(self):
+        for widget in self.channel_list_frame.winfo_children():
+            widget.destroy()
+        self.channel_widgets.clear()
+        
+        if not self.saved_channels:
+            ctk.CTkLabel(self.channel_list_frame, text="Chưa có kênh nào được lưu.", text_color=T.TEXT_SECONDARY, font=(T.FONT_FAMILY, 11, "italic")).pack(pady=T.PAD_LG)
+            return
+
+        sorted_channels = sorted(self.saved_channels.values(), key=lambda x: x.last_update, reverse=True)
+        
+        for ch in sorted_channels:
+            frame = ctk.CTkFrame(self.channel_list_frame, fg_color=T.BG_SECONDARY, corner_radius=T.RADIUS_SM)
+            frame.pack(fill="x", pady=2)
+            
+            top_row = ctk.CTkFrame(frame, fg_color="transparent")
+            top_row.pack(fill="x", padx=T.PAD_SM, pady=(T.PAD_SM, 2))
+            
+            chk_var = ctk.BooleanVar(value=False)
+            chk = ctk.CTkCheckBox(top_row, text="", variable=chk_var, width=20, height=20, checkbox_width=18, checkbox_height=18)
+            chk.pack(side="left")
+            self.channel_widgets[ch.id] = {"checkbox_var": chk_var, "frame": frame}
+            
+            title_btn = ctk.CTkButton(top_row, text=ch.title, font=(T.FONT_FAMILY, 12, "bold"), fg_color="transparent", text_color=T.ACCENT, hover_color=T.BG_SECONDARY, anchor="w", command=lambda url=ch.url: self._open_channel_link(url))
+            title_btn.pack(side="left", fill="x", expand=True)
+            
+            ctk.CTkLabel(frame, text=f"Cập nhật: {ch.last_update}", font=(T.FONT_FAMILY, 10), text_color=T.TEXT_SECONDARY).pack(anchor="w", padx=(30, T.PAD_SM), pady=(0, 2))
+            
+            btn_row = ctk.CTkFrame(frame, fg_color="transparent")
+            btn_row.pack(fill="x", padx=(30, T.PAD_SM), pady=(0, T.PAD_SM))
+            
+            ctk.CTkButton(btn_row, text="Update Video", width=80, height=24, font=(T.FONT_FAMILY, 10, "bold"), fg_color=T.ACCENT_SECONDARY, command=lambda cid=ch.id: self._on_update_video(cid)).pack(side="left", padx=(0, 4))
+            ctk.CTkButton(btn_row, text="Update Kênh", width=80, height=24, font=(T.FONT_FAMILY, 10), fg_color=T.BG_SECONDARY, command=lambda cid=ch.id: self._on_update_channel(cid)).pack(side="left")
+
+    def _open_channel_link(self, url):
+        import webbrowser
+        webbrowser.open(url)
+        
+    def _delete_selected_channels(self):
+        to_delete = []
+        for ch_id, data in self.channel_widgets.items():
+            if data["checkbox_var"].get():
+                to_delete.append(ch_id)
+                
+        if not to_delete:
+            messagebox.showinfo("Thông báo", "Vui lòng chọn ít nhất 1 kênh để xóa.")
+            return
+            
+        if messagebox.askyesno("Xóa kênh", f"Bạn có chắc chắn muốn xóa {len(to_delete)} kênh đã chọn khỏi lịch sử?"):
+            for ch_id in to_delete:
+                if ch_id in self.saved_channels:
+                    del self.saved_channels[ch_id]
+            self._save_channels()
+            self._refresh_channel_list()
+            self.log(f"Đã xóa {len(to_delete)} kênh khỏi lịch sử.")
+
+    def _on_update_video(self, channel_id: str):
+        if channel_id not in self.saved_channels: return
+        ch = self.saved_channels[channel_id]
+        self.url_entry.delete(0, "end")
+        self.url_entry.insert(0, ch.url)
+        self.log(f"Đang Update Video Mới cho kênh: {ch.title}...")
+        self.analyze_btn.configure(state="disabled", text="⏳ Đang phân tích...", text_color="#FFFFFF")
+        asyncio.run_coroutine_threadsafe(self._async_analyze(ch.url, known_video_ids=ch.known_video_ids, target_cid=ch.id), self._async_loop)
+
+    def _on_update_channel(self, channel_id: str):
+        if channel_id not in self.saved_channels: return
+        ch = self.saved_channels[channel_id]
+        self.url_entry.delete(0, "end")
+        self.url_entry.insert(0, ch.url)
+        self.log(f"Đang Update Toàn Bộ Kênh: {ch.title}...")
+        self.analyze_btn.configure(state="disabled", text="⏳ Đang phân tích...", text_color="#FFFFFF")
+        asyncio.run_coroutine_threadsafe(self._async_analyze(ch.url, target_cid=ch.id), self._async_loop)
+
     def _retry_failed_downloads(self):
         if not hasattr(self, 'failed_downloads') or not self.failed_downloads:
             messagebox.showinfo("Thông báo", "Không có video nào bị lỗi hoặc cần tải lại.")
             return
             
+        if not self.current_channel:
+            messagebox.showwarning("Cảnh báo", "Vui lòng phân tích kênh trước khi quay lại tải lỗi.")
+            return
+
         # Create channel-specific folder again just to be safe
         base_path = self.path_var.get()
         clean_channel_name = "".join([c for c in self.current_channel.title if c.isalnum() or c in " _-"]).strip()
@@ -248,7 +415,7 @@ class MainWindow(ctk.CTk):
         style.configure("Custom.Treeview.Heading", background=T.BG_TERTIARY, foreground=T.TEXT, relief="flat", font=(T.FONT_FAMILY, 11, "bold"))
         style.map("Custom.Treeview", background=[('selected', T.ACCENT)])
 
-        columns = ("index", "select", "id", "views", "likes", "ratio", "date", "duration")
+        columns = ("index", "select", "id", "views", "likes", "ratio", "date")
         self.tree = ttk.Treeview(self.table_frame, columns=columns, show="headings", style="Custom.Treeview")
         
         self.tree.heading("index", text="STT")
@@ -258,7 +425,9 @@ class MainWindow(ctk.CTk):
         self.tree.heading("likes", text="❤ Likes")
         self.tree.heading("ratio", text="📊 Like%")
         self.tree.heading("date", text="📅 Ngày đăng")
-        self.tree.heading("duration", text="⏳ TG")
+        
+        # Tags for highlighting new content
+        self.tree.tag_configure('new_video', background=T.BG_HIGHLIGHT)
 
         # Set column proportions - Balanced for full screen
         self.tree.column("index", width=50, anchor="center", stretch=False)
@@ -268,7 +437,6 @@ class MainWindow(ctk.CTk):
         self.tree.column("likes", width=120, anchor="center", stretch=True)
         self.tree.column("ratio", width=100, anchor="center", stretch=True)
         self.tree.column("date", width=150, anchor="center", stretch=True)
-        self.tree.column("duration", width=90, anchor="center", stretch=True)
 
         # Container for Treeview + Scrollbars
         self.tree.pack(side="left", fill="both", expand=True, padx=(T.PAD_MD, 0), pady=T.PAD_MD)
@@ -317,28 +485,110 @@ class MainWindow(ctk.CTk):
         self.analyze_btn.configure(state="disabled", text="⏳ Đang phân tích...", text_color="#FFFFFF")
         asyncio.run_coroutine_threadsafe(self._async_analyze(url), self._async_loop)
 
-    async def _async_analyze(self, url):
-        channel = await self.scraper.analyze_channel(url, self.log)
+    async def _async_analyze(self, url, known_video_ids=None, target_cid=None):
+        channel = await self.scraper.analyze_channel(url, self.log, known_video_ids=known_video_ids)
         
         def _update_ui():
             self.analyze_btn.configure(state="normal", text="🔍 Phân tích kênh")
             if channel:
-                self.current_channel = channel
-                self._populate_table(channel.videos)
+                # Nếu là Update Video Tăng Cường (có known_video_ids) và đang chọn đúng kênh đó
+                if known_video_ids and self.current_channel and (
+                    (self.current_channel.channel_id and self.current_channel.channel_id == channel.channel_id) or 
+                    channel.channel_id == "" or 
+                    (target_cid and target_cid == self.current_channel.channel_id)
+                ):
+                    # Nối video mới vào đầu danh sách cũ, tránh trùng lặp
+                    old_vids = {v.id for v in self.current_channel.videos}
+                    new_unique_videos = [v for v in channel.videos if v.id not in old_vids]
+                    
+                    # Đánh dấu video mới để tô màu
+                    for v in new_unique_videos:
+                        v.is_new = True 
+                    
+                    combined_videos = new_unique_videos + self.current_channel.videos
+                    
+                    # Sắp xếp lại theo thời gian và cập nhật STT
+                    combined_videos.sort(key=lambda x: x.create_time, reverse=True)
+                    for idx, v in enumerate(combined_videos, 1):
+                        v.original_index = idx
+                    
+                    self.current_channel.videos = combined_videos
+                    self.current_channel.total_videos = len(combined_videos)
+                    
+                    # Cập nhật số liệu thống kê (Stats)
+                    if combined_videos:
+                        self.current_channel.avg_views = sum(v.views for v in combined_videos) // len(combined_videos)
+                        self.current_channel.avg_likes = sum(v.likes for v in combined_videos) // len(combined_videos)
+                        self.current_channel.top_views = max(v.views for v in combined_videos)
+                else:
+                    self.current_channel = channel
                 
-                # Update Stats
+                self._populate_table(self.current_channel.videos)
+                
+                # Auto-save to channel history
+                import datetime
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                # Identify the record to update
+                cid = None
+                norm_url = self._normalize_url(url)
+                
+                # 1. Search for ANY existing record that matches the NEWLY SCRAPED ID or URL
+                matched_sid = None
+                for sid, s_ch in self.saved_channels.items():
+                    if (channel.channel_id and s_ch.id == channel.channel_id) or (self._normalize_url(s_ch.url) == norm_url):
+                        matched_sid = sid
+                        break
+                
+                # 2. Decide CID and Merge
+                if target_cid and target_cid in self.saved_channels:
+                    cid = target_cid
+                    if matched_sid and matched_sid != target_cid:
+                        self.log(f"⚡ Phát hiện trùng lặp. Đang gộp dữ liệu...")
+                        if target_cid in self.saved_channels:
+                            del self.saved_channels[target_cid]
+                        cid = matched_sid
+                else:
+                    cid = matched_sid if matched_sid else (channel.channel_id if channel.channel_id else f"ch_{int(datetime.datetime.now().timestamp())}")
+
+                # Biến list video thành danh sách ID MỚI NHẤT để cất đi (lấy tối đa 100 ID)
+                new_known_ids = [v.id for v in self.current_channel.videos[:100]]
+                
+                self.log(f"💾 Cập nhật lịch sử cho kênh: {self.current_channel.title} (ID: {cid})")
+                
+                if cid in self.saved_channels:
+                    # Cập nhật thông tin kênh hiện có
+                    self.saved_channels[cid].known_video_ids = new_known_ids
+                    self.saved_channels[cid].last_update = now_str
+                    self.saved_channels[cid].title = self.current_channel.title
+                    # Update URL if it was cleaner/newer
+                    if len(url) < len(self.saved_channels[cid].url) or '?' not in url:
+                        self.saved_channels[cid].url = url
+                else:
+                    self.saved_channels[cid] = SavedChannel(
+                        id=cid,
+                        url=url,
+                        title=self.current_channel.title,
+                        last_update=now_str,
+                        known_video_ids=new_known_ids
+                    )
+                
+                self._save_channels()
+                self._refresh_channel_list()
+                
+                # Update Stats Cards UI
                 stats = [
-                    str(channel.total_videos),
-                    f"{channel.avg_views:,}",
-                    f"{channel.avg_likes:,}",
+                    str(self.current_channel.total_videos),
+                    f"{self.current_channel.avg_views:,}",
+                    f"{self.current_channel.avg_likes:,}",
                     "Trending", 
-                    f"{channel.top_views:,}"
+                    f"{self.current_channel.top_views:,}"
                 ]
                 for i, card in enumerate(self.stat_cards):
                     label_val = card.winfo_children()[1]
                     label_val.configure(text=stats[i])
                 
-                self.log(f"Đã cập nhật bảng với {len(channel.videos)} video.")
+                self.log(f"Đã cập nhật bảng. Tổng cộng: {len(self.current_channel.videos)} video.")
             else:
                 messagebox.showerror("Lỗi", "Không thể phân tích kênh. Vui lòng kiểm tra Nhật ký để biết chi tiết lỗi.")
 
@@ -364,14 +614,12 @@ class MainWindow(ctk.CTk):
             self.tree.insert("", "end", values=(
                 v.original_index,
                 "☐",
-
                 v.id,
                 f"{v.views:,}",
                 f"{v.likes:,}",
                 f"{v.like_ratio:.1f}%",
-                date_str,
-                duration_str
-            ), tags=(v.id,))
+                date_str
+            ), tags=(v.id, 'new_video' if getattr(v, 'is_new', False) else ''))
 
 
     def _select_top(self, count):
@@ -498,7 +746,8 @@ class MainWindow(ctk.CTk):
 
         # Create channel-specific folder
         base_path = self.path_var.get()
-        clean_channel_name = "".join([c for c in self.current_channel.title if c.isalnum() or c in " _-"]).strip()
+        title = getattr(self.current_channel, 'title', 'Douyin_Channel')
+        clean_channel_name = "".join([c for c in title if c.isalnum() or c in " _-"]).strip()
         if not clean_channel_name: clean_channel_name = "Douyin_Channel"
         
         # Thêm channel_id vào tên folder

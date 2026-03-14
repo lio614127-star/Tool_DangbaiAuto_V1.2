@@ -47,3 +47,11 @@ class ChannelInfo:
     trending_score: float = 0.0
     top_views: int = 0
     videos: list[VideoInfo] = field(default_factory=list)
+
+@dataclass
+class SavedChannel:
+    id: str
+    url: str
+    title: str
+    last_update: str
+    known_video_ids: list[str] = field(default_factory=list)

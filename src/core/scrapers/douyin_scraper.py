@@ -76,7 +76,7 @@ class DouyinScraper:
         with open(script_path, 'r', encoding='utf-8') as f:
             return f.read()
 
-    async def analyze_channel(self, url: str, logger_callback: Optional[Callable] = None) -> Optional[ChannelInfo]:
+    async def analyze_channel(self, url: str, logger_callback: Optional[Callable] = None, known_video_ids: Optional[list[str]] = None) -> Optional[ChannelInfo]:
         """Analyze Douyin channel using Scripts 02, 03, 04."""
         self._is_cancelled = False
         if logger_callback: logger_callback("Đang khởi tạo trình duyệt ẩn...")
@@ -141,6 +141,17 @@ class DouyinScraper:
                 
                 # Script 02 có thể chạy lâu (nhiều trang video) — đặt timeout 10 phút
                 page.set_default_timeout(600_000)
+                
+                # Truyền danh sách video đã biết xuống context của JS
+                if known_video_ids is not None:
+                    await page.evaluate(f"window.__KNOWN_VIDEO_IDS__ = {json.dumps(known_video_ids)};")
+                    await page.evaluate("window.__IS_INCREMENTAL__ = true;")
+                    if logger_callback: logger_callback("Đang chạy ở chế độ: Cập nhật video mới...")
+                else:
+                    await page.evaluate("window.__KNOWN_VIDEO_IDS__ = [];")
+                    await page.evaluate("window.__IS_INCREMENTAL__ = false;")
+                    if logger_callback: logger_callback("Đang chạy ở chế độ: Phân tích toàn bộ kênh...")
+                    
                 res_data = await page.evaluate(script_02)
 
                 raw_data = []
@@ -155,6 +166,12 @@ class DouyinScraper:
                     raw_data = res_data
 
                 if not raw_data:
+                    # If it's an incremental update, finding 0 new videos is a valid SUCCESS (already up to date/empty history)
+                    if known_video_ids is not None and nickname != "Dữ liệu từ Douyin":
+                        if logger_callback: logger_callback("✅ Kênh đã ở trạng thái mới nhất (không có video mới).")
+                        # Return an empty channel object instead of None
+                        return ChannelInfo(title=nickname, channel_id=channel_id, total_videos=0, avg_views=0, avg_likes=0, top_views=0, videos=[])
+
                     logger.warning(f"[DEBUG] Script 02 returned empty. res_data={str(res_data)[:300]}")
                     if logger_callback: logger_callback(f"[DEBUG] Douyin trả về: {str(res_data)[:200]}")
                     if logger_callback: logger_callback("Lỗi: Script không tìm thấy video nào hoặc bị chặn.")
