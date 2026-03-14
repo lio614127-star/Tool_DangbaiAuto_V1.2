@@ -69,10 +69,15 @@ The application is mature, synchronized with GitHub, and optimized for both tech
   - Overhauled the save logic to prevent duplicate channel entries.
   - Implemented "Greedy Merging": when an update is triggered, the tool automatically detects and collapses duplicate records based on normalized URLs or Channel IDs.
   - Added deduplication on application startup to ensure a clean sidebar state from the first second.
-- **Incremental Update Refinement**:
-  - Re-engineered the communication between Python and the browser scripts using an explicit `__IS_INCREMENTAL__` flag.
-  - Fixed a critical regression where "Update Video" would perform a full scan on uninitialized channels; it now correctly returns 0 videos, respecting the "delta-only" intent.
-- **Improved Logging**: Added clear, actionable logs in the footer for matching events, target IDs, and merging actions.
+### Phase 9: UI Refactor & Download Control (V1.2.2)
+- **Simplified UI**: Removed "Tải Top 20/50" buttons from the footer to reduce clutter.
+- **Download Automation**: Rearranged control buttons so "Tải đã chọn" (Download Selected) is in the primary position.
+- **Granular Pause/Resume**:
+  - Implemented `threading.Event` logic in the batch download loop.
+  - Added "⏸ Dừng tải" (Pause) and "▶ Tiếp tục" (Resume) buttons.
+  - The tool now gracefully pauses after the current video finishes, allowing for manual interruptions without losing progress.
+- **Folder Naming Clean-up**: Modified the download logic to name folders **strictly by channel name**, removing the previously appended ID suffix for a cleaner user workspace.
+- **Documentation Overhaul**: Updated `state.md` and `roadmap.md` to reflect the completed Phase 9 objectives.
 
 ## 📋 Handover & Operations
 - **To Run**: `python main.py`

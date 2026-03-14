@@ -19,7 +19,8 @@ class MainWindow(ctk.CTk):
 
         # Scraper logic
         self.scraper = DouyinScraper()
-        self.all_selected = False
+        self.download_paused = threading.Event()
+        self.download_paused.set() # Not paused by default
         self.current_channel = None
         self.failed_downloads: list = [] # Track failed (vid, filename)
         self._async_loop = None
@@ -300,10 +301,20 @@ class MainWindow(ctk.CTk):
 
         actions_row = ctk.CTkFrame(self.controls_panel, fg_color="transparent")
         actions_row.pack(fill="x")
-        ctk.CTkButton(actions_row, text="↓ Tải Top 20", width=110, height=40, font=(T.FONT_FAMILY, 12, "bold"), fg_color=T.ACCENT_GREEN, command=lambda: self._on_download_top(20)).pack(side="left", padx=2)
-        ctk.CTkButton(actions_row, text="↓ Tải Top 50", width=110, height=40, font=(T.FONT_FAMILY, 12, "bold"), fg_color=T.ACCENT, command=lambda: self._on_download_top(50)).pack(side="left", padx=2)
-        ctk.CTkButton(actions_row, text="↓ Tải đã chọn", width=110, height=40, font=(T.FONT_FAMILY, 12, "bold"), fg_color=T.ACCENT_SECONDARY, command=self._on_download_selected).pack(side="left", padx=2)
-        ctk.CTkButton(actions_row, text="↻ Tải lại lỗi", width=110, height=40, font=(T.FONT_FAMILY, 12, "bold"), fg_color="#EF4444", command=self._retry_failed_downloads).pack(side="left", padx=2)
+        
+        # Sát trái: Tải đã chọn
+        ctk.CTkButton(actions_row, text="↓ Tải đã chọn", width=110, height=40, font=(T.FONT_FAMILY, 12, "bold"), 
+                      fg_color=T.ACCENT_SECONDARY, command=self._on_download_selected).pack(side="left", padx=2)
+        
+        # Tiếp theo: Dừng tải và Tiếp tục tải
+        ctk.CTkButton(actions_row, text="⏸ Dừng tải", width=110, height=40, font=(T.FONT_FAMILY, 12, "bold"), 
+                      fg_color="#CC7A00", command=self._pause_download).pack(side="left", padx=2)
+        ctk.CTkButton(actions_row, text="▶ Tiếp tục", width=110, height=40, font=(T.FONT_FAMILY, 12, "bold"), 
+                      fg_color="#22C55E", command=self._resume_download).pack(side="left", padx=2)
+        
+        # Cuối cùng: Tải lại lỗi
+        ctk.CTkButton(actions_row, text="↻ Tải lại lỗi", width=110, height=40, font=(T.FONT_FAMILY, 12, "bold"), 
+                      fg_color="#EF4444", command=self._retry_failed_downloads).pack(side="right", padx=2)
 
     def _refresh_channel_list(self):
         for widget in self.channel_list_frame.winfo_children():
@@ -392,17 +403,20 @@ class MainWindow(ctk.CTk):
         base_path = self.path_var.get()
         clean_channel_name = "".join([c for c in self.current_channel.title if c.isalnum() or c in " _-"]).strip()
         if not clean_channel_name: clean_channel_name = "Douyin_Channel"
-        
-        # Thêm channel_id vào tên folder
-        if hasattr(self.current_channel, 'channel_id') and self.current_channel.channel_id:
-            clean_channel_name = f"{clean_channel_name}_{self.current_channel.channel_id}"
-            
         download_path = os.path.join(base_path, clean_channel_name)
         
         retry_tasks = list(self.failed_downloads)
         self.failed_downloads.clear()
         
         threading.Thread(target=self._run_batch_download, args=(retry_tasks, download_path, True), daemon=True).start()
+
+    def _pause_download(self):
+        self.download_paused.clear()
+        self.log("⏸️ Đã bấm Dừng tải. Tool sẽ dừng sau khi hoàn tất video hiện tại.")
+
+    def _resume_download(self):
+        self.download_paused.set()
+        self.log("▶️ Tiếp tục tải...")
     def _set_min_likes(self, value):
         self.min_likes_entry.delete(0, "end")
         self.min_likes_entry.insert(0, str(value))
@@ -749,11 +763,6 @@ class MainWindow(ctk.CTk):
         title = getattr(self.current_channel, 'title', 'Douyin_Channel')
         clean_channel_name = "".join([c for c in title if c.isalnum() or c in " _-"]).strip()
         if not clean_channel_name: clean_channel_name = "Douyin_Channel"
-        
-        # Thêm channel_id vào tên folder
-        if hasattr(self.current_channel, 'channel_id') and self.current_channel.channel_id:
-            clean_channel_name = f"{clean_channel_name}_{self.current_channel.channel_id}"
-            
         download_path = os.path.join(base_path, clean_channel_name)
         os.makedirs(download_path, exist_ok=True)
 
@@ -766,7 +775,14 @@ class MainWindow(ctk.CTk):
         self.log(f"🚀 Bắt đầu {status_msg} {len(tasks)} video vào thư mục: {os.path.basename(download_path)}...")
         import random
         
+        self.download_paused.set() # Đảm bảo không bị pause từ đầu
+        
         for i, (vid, filename) in enumerate(tasks):
+            # Check pause state
+            if not self.download_paused.is_set():
+                self.log("⏸️ Đang dừng tải... Bấm 'Tiếp tục' để chạy tiếp.")
+                self.download_paused.wait()
+            
             url = f"https://www.douyin.com/video/{vid}"
             target_path = os.path.join(download_path, filename)
             
