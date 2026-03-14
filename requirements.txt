@@ -1,0 +1,7 @@
+customtkinter
+playwright
+beautifulsoup4
+httpx
+Pillow
+aiofiles
+pyinstaller

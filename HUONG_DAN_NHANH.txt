@@ -1,0 +1,27 @@
+==========================================================
+🚀 HDSD NHANH: DOUYIN DOWNLOADER & ANALYZER v1.0.0
+==========================================================
+
+1. KHỞI ĐỘNG:
+   - Chạy file DouyinDownloader.exe.
+   - Nếu chạy từ code: Gõ 'python main.py'
+
+2. CÁC BƯỚC SỬ DỤNG CHÍNH:
+   B1: Copy link kênh Douyin (Dạng user/...) dán vào ô tìm kiếm.
+   B2: Bấm [🔍 Phân tích kênh]. Đợi tool quét và dịch tiêu đề.
+   B3: (Tùy chọn) Dùng Sidebar bên trái để lọc video theo View hoặc Ngày đăng.
+   B4: Bấm [📁 Chọn folder] để chọn nơi lưu video.
+   B5: Chọn các video muốn tải hoặc dùng nút [↓ Tải Top 20/50] để tải nhanh.
+
+3. LƯU Ý QUAN TRỌNG:
+   - Đăng nhập (nếu cần): Bấm [🔑 Đăng nhập] để mở trình duyệt, đăng nhập thủ công
+     rồi tắt trình duyệt để tool lưu Cookies. Việc này giúp tránh bị chặn.
+   - Bỏ qua (Skip): Tool sẽ tự động không tải lại những video đã tồn tại trong folder.
+   - Delay: Tool có chế độ nghỉ 2-5s giữa mỗi video để né quét Bot, đừng lo lắng.
+
+4. KHI GẶP LỖI:
+   - Thử lại lần 2 (Tool tự động làm).
+   - Nếu vẫn lỗi, hãy bấm Đăng nhập lại để cập nhật Session.
+
+Chúc bạn thành công!
+==========================================================
